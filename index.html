@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>English Listening Master</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app">
+    <nav id="nav">
+      <button class="nav-btn active" data-view="home">🏠 ホーム</button>
+      <button class="nav-btn" data-view="test">🎧 テスト</button>
+      <button class="nav-btn" data-view="weaklist">⚡ 苦手</button>
+      <button class="nav-btn" data-view="mastery">📊 習熟度</button>
+      <button class="nav-btn" data-view="badges">🏆 バッジ</button>
+      <button class="nav-btn" data-view="review">⭐ 復習</button>
+    </nav>
+    <main id="view-container"></main>
+    <div id="key-hint"></div>
+  </div>
+
+  <script src="data.js"></script>
+  <script src="db.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
