@@ -3,6 +3,30 @@
 // ============================================================
 
 // ── Speech ───────────────────────────────────────────────────
+// iOS Safari: voices are empty until voiceschanged fires → cache them
+let _voices = [];
+function _loadVoices() {
+  const v = window.speechSynthesis.getVoices();
+  if (v.length) _voices = v;
+}
+_loadVoices();
+window.speechSynthesis.onvoiceschanged = _loadVoices;
+
+// iOS Safari: speechSynthesis is locked until a user gesture occurs.
+// Unlock it silently on the very first tap/click anywhere on the page.
+let _speechUnlocked = false;
+function _unlockSpeech() {
+  if (_speechUnlocked) return;
+  _speechUnlocked = true;
+  const u = new SpeechSynthesisUtterance('');
+  window.speechSynthesis.speak(u);
+  _loadVoices();
+  document.removeEventListener('touchstart', _unlockSpeech);
+  document.removeEventListener('click',      _unlockSpeech);
+}
+document.addEventListener('touchstart', _unlockSpeech, { passive: true });
+document.addEventListener('click',      _unlockSpeech);
+
 function speak(text) {
   return new Promise(resolve => {
     window.speechSynthesis.cancel();
@@ -10,15 +34,13 @@ function speak(text) {
     utt.lang  = 'en-US';
     utt.rate  = 1.1;
     utt.pitch = 1;
-    const voices = window.speechSynthesis.getVoices();
-    const usVoice = voices.find(v => v.lang === 'en-US') ||
-                    voices.find(v => v.lang.startsWith('en'));
+    const usVoice = _voices.find(v => v.lang === 'en-US') ||
+                    _voices.find(v => v.lang.startsWith('en'));
     if (usVoice) utt.voice = usVoice;
     utt.onend = resolve; utt.onerror = resolve;
     window.speechSynthesis.speak(utt);
   });
 }
-window.speechSynthesis.onvoiceschanged = () => {};
 
 // ── Toast ─────────────────────────────────────────────────────
 const toastEl = document.getElementById('toast');
@@ -303,9 +325,9 @@ async function renderQuestion() {
     </div>
 
     <div class="card">
-      <button class="audio-btn" id="play-btn">
+      <button class="audio-btn pulse" id="play-btn">
         <span id="play-icon">▶</span>
-        <span>音声を再生</span>
+        <span>タップして音声を再生</span>
       </button>
 
       <div class="choices" id="choices">
@@ -323,6 +345,7 @@ async function renderQuestion() {
   // Audio button
   const playBtn = document.getElementById('play-btn');
   function startPlay() {
+    playBtn.classList.remove('pulse');
     playBtn.classList.add('playing');
     playBtn.querySelector('#play-icon').textContent = '🔊';
     speak(item.en).then(() => {
@@ -332,7 +355,7 @@ async function renderQuestion() {
       }
     });
   }
-  startPlay();
+  // ※ iOS Safari では自動再生不可のため、ユーザーのタップを待つ
   playBtn.addEventListener('click', startPlay);
 
   // Choice buttons
@@ -390,7 +413,8 @@ async function handleAnswer(chosenBtn, item) {
     ${!isCorrect ? `<div style="margin-top:6px;font-size:12px;color:var(--text2)">もう一度聞いてみよう</div>` : ''}
   `;
 
-  if (!isCorrect) setTimeout(() => speak(item.en), 300);
+  // 不正解時: 自動再生はiOSでブロックされるため、ボタンで再生する
+  if (!isCorrect) speak(item.en);
 
   // Bookmark button
   const bookmarkBtn = document.createElement('button');

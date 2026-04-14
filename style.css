@@ -169,11 +169,13 @@ body {
   transition: background .2s;
 }
 .audio-btn:hover { background: #38bdf822; }
-.audio-btn.playing { animation: pulse 1s infinite; }
+.audio-btn.playing { animation: pulse-ring 1s infinite; }
+.audio-btn.pulse   { animation: pulse-ring 1.4s infinite; }
+.audio-btn.playing.pulse { animation: pulse-ring 0.8s infinite; }
 
-@keyframes pulse {
-  0%, 100% { box-shadow: 0 0 0 0 #38bdf844; }
-  50% { box-shadow: 0 0 0 8px #38bdf800; }
+@keyframes pulse-ring {
+  0%, 100% { box-shadow: 0 0 0 0 #38bdf855; }
+  50% { box-shadow: 0 0 0 10px #38bdf800; }
 }
 
 .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
