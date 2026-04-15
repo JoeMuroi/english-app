@@ -3,42 +3,49 @@
 // ============================================================
 
 // ── Speech ───────────────────────────────────────────────────
-// iOS Safari: voices are empty until voiceschanged fires → cache them
+const synth = window.speechSynthesis || null;
 let _voices = [];
-function _loadVoices() {
-  const v = window.speechSynthesis.getVoices();
-  if (v.length) _voices = v;
-}
-_loadVoices();
-window.speechSynthesis.onvoiceschanged = _loadVoices;
 
-// iOS Safari: speechSynthesis is locked until a user gesture occurs.
-// Unlock it silently on the very first tap/click anywhere on the page.
-let _speechUnlocked = false;
-function _unlockSpeech() {
-  if (_speechUnlocked) return;
-  _speechUnlocked = true;
-  const u = new SpeechSynthesisUtterance('');
-  window.speechSynthesis.speak(u);
+if (synth) {
+  const _loadVoices = () => {
+    const v = synth.getVoices();
+    if (v.length) _voices = v;
+  };
   _loadVoices();
-  document.removeEventListener('touchstart', _unlockSpeech);
-  document.removeEventListener('click',      _unlockSpeech);
+  synth.onvoiceschanged = _loadVoices;
+
+  // iOS Safari: unlock audio on first user gesture
+  let _unlocked = false;
+  const _unlock = () => {
+    if (_unlocked) return;
+    _unlocked = true;
+    try {
+      const u = new SpeechSynthesisUtterance('');
+      synth.speak(u);
+      _loadVoices();
+    } catch(e) {}
+    document.removeEventListener('touchstart', _unlock);
+    document.removeEventListener('click',      _unlock);
+  };
+  document.addEventListener('touchstart', _unlock, { passive: true });
+  document.addEventListener('click',      _unlock);
 }
-document.addEventListener('touchstart', _unlockSpeech, { passive: true });
-document.addEventListener('click',      _unlockSpeech);
 
 function speak(text) {
   return new Promise(resolve => {
-    window.speechSynthesis.cancel();
-    const utt = new SpeechSynthesisUtterance(text);
-    utt.lang  = 'en-US';
-    utt.rate  = 1.1;
-    utt.pitch = 1;
-    const usVoice = _voices.find(v => v.lang === 'en-US') ||
-                    _voices.find(v => v.lang.startsWith('en'));
-    if (usVoice) utt.voice = usVoice;
-    utt.onend = resolve; utt.onerror = resolve;
-    window.speechSynthesis.speak(utt);
+    if (!synth) { resolve(); return; }
+    try {
+      synth.cancel();
+      const utt = new SpeechSynthesisUtterance(text);
+      utt.lang  = 'en-US';
+      utt.rate  = 1.1;
+      utt.pitch = 1;
+      const usVoice = _voices.find(v => v.lang === 'en-US') ||
+                      _voices.find(v => v.lang.startsWith('en'));
+      if (usVoice) utt.voice = usVoice;
+      utt.onend = resolve; utt.onerror = resolve;
+      synth.speak(utt);
+    } catch(e) { resolve(); }
   });
 }
 
