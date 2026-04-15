@@ -276,8 +276,13 @@ async function renderHome() {
 
 // ── TEST ──────────────────────────────────────────────────────
 let session = null;
+let _preloadedQuestions = null; // 先読みした問題リスト
 
-function renderTestStart() {
+async function renderTestStart() {
+  // スタート画面を表示しながらバックグラウンドで問題を先読み
+  _preloadedQuestions = null;
+  DB.selectQuestions(window.ITEMS).then(q => { _preloadedQuestions = q; });
+
   container.innerHTML = `
     <div style="text-align:center;padding:40px 16px">
       <div style="font-size:48px;margin-bottom:16px">🎧</div>
@@ -304,7 +309,9 @@ function renderTestStart() {
 async function startSession() {
   cur.clear();
   keyHint.innerHTML = '';
-  const questions = await DB.selectQuestions(window.ITEMS, 30);
+  // 先読みが完了していればawait不要 → タップの瞬間に音声が鳴る
+  const questions = _preloadedQuestions || await DB.selectQuestions(window.ITEMS);
+  _preloadedQuestions = null;
   session = { questions, current: 0, score: 0, answers: [] };
   renderQuestion();
 }
