@@ -332,9 +332,9 @@ async function renderQuestion() {
     </div>
 
     <div class="card">
-      <button class="audio-btn pulse" id="play-btn">
+      <button class="audio-btn" id="play-btn">
         <span id="play-icon">▶</span>
-        <span>タップして音声を再生</span>
+        <span>もう一度聞く</span>
       </button>
 
       <div class="choices" id="choices">
@@ -352,7 +352,6 @@ async function renderQuestion() {
   // Audio button
   const playBtn = document.getElementById('play-btn');
   function startPlay() {
-    playBtn.classList.remove('pulse');
     playBtn.classList.add('playing');
     playBtn.querySelector('#play-icon').textContent = '🔊';
     speak(item.en).then(() => {
@@ -362,7 +361,7 @@ async function renderQuestion() {
       }
     });
   }
-  // ※ iOS Safari では自動再生不可のため、ユーザーのタップを待つ
+  startPlay(); // 問題表示と同時に自動再生
   playBtn.addEventListener('click', startPlay);
 
   // Choice buttons
