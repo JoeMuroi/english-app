@@ -570,7 +570,6 @@ async function renderWeakList() {
     <div class="section-title">⚡ 苦手リスト</div>
     <div class="filter-tabs">
       <button class="filter-tab active" data-type="all">すべて</button>
-      <button class="filter-tab" data-type="word">単語</button>
       <button class="filter-tab" data-type="chunk">チャンク</button>
     </div>
     <div class="card" id="weak-body">
