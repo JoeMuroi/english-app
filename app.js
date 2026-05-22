@@ -189,6 +189,16 @@ async function renderHome() {
     </div>
 
     <div class="card" style="margin-top:16px">
+      <div class="section-title">🗑 除外した単語</div>
+      <p style="color:var(--text2);font-size:13px;margin-bottom:10px">
+        「使わない」と判断した単語の管理。元に戻すこともできます。
+      </p>
+      <button class="btn-secondary" id="excluded-list-btn">
+        除外リストを開く<span id="excluded-count-badge" style="margin-left:8px"></span>
+      </button>
+    </div>
+
+    <div class="card" style="margin-top:16px">
       <div class="section-title">📲 データの引き継ぎ</div>
       <p style="color:var(--text2);font-size:13px;margin-bottom:10px">
         スマホ↔PCなど、別の端末に学習データを移すときに使います。
@@ -227,6 +237,18 @@ async function renderHome() {
   const transferMsg = document.getElementById('transfer-msg');
 
   startBtn.addEventListener('click', () => navigateTo('test'));
+
+  // 除外リストのボタン
+  const excludedListBtn = document.getElementById('excluded-list-btn');
+  const excludedCountBadge = document.getElementById('excluded-count-badge');
+  DB.getExcludedItems().then(list => {
+    if (list.length) {
+      excludedCountBadge.textContent = `（${list.length}件）`;
+      excludedCountBadge.style.color = 'var(--text2)';
+      excludedCountBadge.style.fontSize = '13px';
+    }
+  });
+  excludedListBtn.addEventListener('click', () => renderExcludedList());
 
   exportBtn.addEventListener('click', async () => {
     importArea.style.display = 'none';
@@ -444,6 +466,20 @@ async function handleAnswer(chosenBtn, item) {
   });
   fb.appendChild(bookmarkBtn);
 
+  // Exclude (削除) button — 今後出題されなくする
+  const excludeBtn = document.createElement('button');
+  excludeBtn.className = 'exclude-btn';
+  excludeBtn.innerHTML = '🗑 この単語を今後出さない';
+  excludeBtn.addEventListener('click', async () => {
+    if (!confirm(`「${item.en}」を今後の出題から外しますか？\n（あとでホーム画面から復活できます）`)) return;
+    await DB.setExcluded(item.id, true);
+    excludeBtn.disabled = true;
+    excludeBtn.innerHTML = '✅ 除外しました（次回から出題されません）';
+    excludeBtn.classList.add('excluded-done');
+    showToast(`🗑 「${item.en}」を除外しました`);
+  });
+  fb.appendChild(excludeBtn);
+
   const isLast = session.current + 1 >= session.questions.length;
   const nextBtn = document.createElement('button');
   nextBtn.className = 'next-btn';
@@ -452,12 +488,14 @@ async function handleAnswer(chosenBtn, item) {
   nextBtn.addEventListener('click', () => { session.current++; renderQuestion(); });
   fb.appendChild(nextBtn);
 
-  // Cursor: bookmark(0) → next(1)
+  // Cursor: bookmark(0) → exclude(1) → next(2)
   cur.set([
     { el: bookmarkBtn, action: () => bookmarkBtn.click(),
       nav: { up:0, down:1, left:0, right:0 } },
+    { el: excludeBtn,  action: () => excludeBtn.click(),
+      nav: { up:0, down:2, left:1, right:1 } },
     { el: nextBtn,     action: () => { session.current++; renderQuestion(); },
-      nav: { up:0, down:1, left:1, right:1 } },
+      nav: { up:1, down:2, left:2, right:2 } },
   ]);
 
   keyHint.innerHTML = HINT_BASE;
@@ -558,9 +596,10 @@ async function renderWeakList() {
           <div class="weak-en">${w.item.en}</div>
           <div class="weak-ja">${w.item.ja}</div>
         </div>
-        <div style="display:flex;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
           <div class="weak-rate">${Math.round(w.accuracy * 100)}%</div>
           <button class="speak-btn" data-text="${w.item.en}">🔊</button>
+          <button class="exclude-mini-btn" data-id="${w.item.id}" data-en="${w.item.en}" title="今後の出題から外す">🗑</button>
         </div>
       </div>
     `).join('');
@@ -585,9 +624,23 @@ async function renderWeakList() {
       tab.classList.add('active');
       document.getElementById('weak-body').innerHTML = renderList(tab.dataset.type);
       bindSpeakBtns();
+      bindExcludeMiniBtns(() => renderWeakList());
     });
   });
   bindSpeakBtns();
+  bindExcludeMiniBtns(() => renderWeakList());
+}
+
+function bindExcludeMiniBtns(onAfter) {
+  document.querySelectorAll('.exclude-mini-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const en = btn.dataset.en;
+      if (!confirm(`「${en}」を今後の出題から外しますか？\n（あとでホーム画面から復活できます）`)) return;
+      await DB.setExcluded(btn.dataset.id, true);
+      showToast(`🗑 「${en}」を除外しました`);
+      if (typeof onAfter === 'function') onAfter();
+    });
+  });
 }
 
 function bindSpeakBtns() {
@@ -630,7 +683,8 @@ async function renderBookmarkList() {
             </div>
             <div style="display:flex;align-items:center;gap:6px">
               <button class="speak-btn" data-text="${item.en}">🔊</button>
-              <button class="unbookmark-btn" data-id="${item.id}" title="リストから外す">✕</button>
+              <button class="exclude-mini-btn" data-id="${item.id}" data-en="${item.en}" title="今後の出題から外す">🗑</button>
+              <button class="unbookmark-btn" data-id="${item.id}" title="復習リストから外す">✕</button>
             </div>
           </div>
         `).join('')}
@@ -654,6 +708,80 @@ async function renderBookmarkList() {
       renderBookmarkList();
     });
   });
+
+  bindExcludeMiniBtns(() => renderBookmarkList());
+}
+
+// ── EXCLUDED LIST (除外した単語の管理) ─────────────────────
+async function renderExcludedList() {
+  cur.clear();
+  keyHint.innerHTML = '';
+  // ホームのナビをアクティブ表示のままにする
+  navBtns.forEach(b => b.classList.remove('active'));
+  document.querySelector('[data-view="home"]')?.classList.add('active');
+
+  const excludedRecs = await DB.getExcludedItems();
+  const itemMap = {};
+  window.ITEMS.forEach(i => itemMap[i.id] = i);
+  const items = excludedRecs.map(r => itemMap[r.id]).filter(Boolean);
+
+  container.innerHTML = `
+    <div class="section-title">🗑 除外した単語</div>
+    <p style="color:var(--text2);font-size:13px;margin-bottom:12px">
+      ここにある単語は今後のテストで出題されません。<br>
+      「↩ 復活」を押すと再び出題対象になります。
+    </p>
+    <button class="btn-secondary" id="back-home-btn" style="margin-bottom:16px">← ホームに戻る</button>
+    ${items.length === 0 ? `
+      <div class="empty-state">
+        <div class="icon">📭</div>
+        <p>除外した単語はありません</p>
+        <p style="font-size:12px;margin-top:8px;color:var(--text2)">
+          テスト中に「🗑 この単語を今後出さない」を押すと、ここに追加されます
+        </p>
+      </div>
+    ` : `
+      <div style="margin-bottom:12px">
+        <button class="btn-secondary" id="restore-all-btn">🔄 全て復活させる（${items.length}件）</button>
+      </div>
+      <div class="card">
+        ${items.map(item => `
+          <div class="weak-item">
+            <div>
+              <div class="weak-en">${item.en}</div>
+              <div class="weak-ja">${item.ja}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:6px">
+              <button class="speak-btn" data-text="${item.en}">🔊</button>
+              <button class="restore-btn" data-id="${item.id}" data-en="${item.en}">↩ 復活</button>
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `}
+  `;
+
+  document.getElementById('back-home-btn').addEventListener('click', () => navigateTo('home'));
+
+  bindSpeakBtns();
+
+  document.querySelectorAll('.restore-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await DB.setExcluded(btn.dataset.id, false);
+      showToast(`↩ 「${btn.dataset.en}」を復活させました`);
+      renderExcludedList();
+    });
+  });
+
+  const restoreAllBtn = document.getElementById('restore-all-btn');
+  if (restoreAllBtn) {
+    restoreAllBtn.addEventListener('click', async () => {
+      if (!confirm(`除外したすべての単語（${items.length}件）を復活させますか？`)) return;
+      for (const it of items) await DB.setExcluded(it.id, false);
+      showToast(`🔄 ${items.length}件を復活させました`);
+      renderExcludedList();
+    });
+  }
 }
 
 async function startReviewSession() {

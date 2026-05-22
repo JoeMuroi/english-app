@@ -460,6 +460,56 @@ body {
 }
 .unbookmark-btn:hover { border-color: var(--danger); color: var(--danger); }
 
+/* ── EXCLUDE (削除) BUTTON ── */
+.exclude-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  margin-top: 8px;
+  background: none;
+  border: 1px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text2);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .2s;
+}
+.exclude-btn:hover { border-color: var(--danger); color: var(--danger); background: #f8717112; }
+.exclude-btn:disabled { opacity: .7; cursor: default; }
+.exclude-btn.excluded-done {
+  border-color: var(--success);
+  color: var(--success);
+  background: #4ade8012;
+}
+
+.exclude-mini-btn {
+  background: none;
+  border: 1px solid var(--surface2);
+  border-radius: 8px;
+  color: var(--text2);
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .2s;
+}
+.exclude-mini-btn:hover { border-color: var(--danger); color: var(--danger); background: #f8717112; }
+
+.restore-btn {
+  background: none;
+  border: 1px solid var(--surface2);
+  border-radius: 8px;
+  color: var(--text2);
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .2s;
+  white-space: nowrap;
+}
+.restore-btn:hover { border-color: var(--success); color: var(--success); background: #4ade8012; }
+
 /* ── EXPORT / IMPORT ── */
 .data-actions {
   display: flex;

@@ -144,7 +144,9 @@ async function selectQuestions(allItems) {
 
   // Exclude chunks used in the previous session
   const lastIds    = new Set(await getLastSessionChunkIds());
-  const allChunks  = allItems.filter(i => i.type === 'chunk');
+  // Exclude items the user marked as "不要" (excluded)
+  const excludedIds = new Set(records.filter(r => r.excluded).map(r => r.id));
+  const allChunks  = allItems.filter(i => i.type === 'chunk' && !excludedIds.has(i.id));
   const freshChunks = allChunks.filter(i => !lastIds.has(i.id));
 
   // Fall back to all chunks if not enough fresh ones
@@ -175,7 +177,7 @@ async function getWeakItems(limit = 50) {
   allItems.forEach(i => itemMap[i.id] = i);
 
   const withAccuracy = records
-    .filter(r => (r.correct + r.incorrect) >= 2)
+    .filter(r => !r.excluded && (r.correct + r.incorrect) >= 2)
     .map(r => ({
       ...r,
       item: itemMap[r.id],
@@ -192,6 +194,7 @@ async function getMasteryMap() {
   const records = await getAllItemRecords();
   const map = {};
   records.forEach(r => {
+    if (r.excluded) return; // 除外された単語はマップから除く
     const total = r.correct + r.incorrect;
     if (total === 0) { map[r.id] = 0; return; }
     const acc = r.correct / total;
@@ -256,8 +259,10 @@ async function selectBookmarkQuestions(allItems) {
   const bookmarked = await getBookmarkedItems();
   if (!bookmarked.length) return [];
 
-  const bookmarkIds = new Set(bookmarked.map(r => r.id));
-  const pool = allItems.filter(i => bookmarkIds.has(i.id));
+  // 除外された単語は復習にも出さない
+  const excludedIds = new Set(bookmarked.filter(r => r.excluded).map(r => r.id));
+  const bookmarkIds = new Set(bookmarked.filter(r => !r.excluded).map(r => r.id));
+  const pool = allItems.filter(i => bookmarkIds.has(i.id) && !excludedIds.has(i.id));
 
   const now = Date.now();
   const records = await getAllItemRecords();
@@ -278,6 +283,35 @@ async function selectBookmarkQuestions(allItems) {
     .slice(0, 30)
     .map(s => s.item)
     .sort(() => Math.random() - 0.5);
+}
+
+// ── Excluded items (使わない単語) ─────────────────────────────
+async function isExcluded(itemId) {
+  const rec = await getItemRecord(itemId);
+  return rec?.excluded || false;
+}
+
+async function setExcluded(itemId, value) {
+  let rec = await getItemRecord(itemId);
+  if (!rec) rec = { id: itemId, correct: 0, incorrect: 0, streak: 0, nextReview: Date.now(), lastSeen: null };
+  rec.excluded = !!value;
+  await dbPut('items', rec);
+  return rec.excluded;
+}
+
+async function toggleExclude(itemId) {
+  const current = await isExcluded(itemId);
+  return await setExcluded(itemId, !current);
+}
+
+async function getExcludedItems() {
+  const records = await getAllItemRecords();
+  return records.filter(r => r.excluded);
+}
+
+async function getExcludedIds() {
+  const records = await getAllItemRecords();
+  return new Set(records.filter(r => r.excluded).map(r => r.id));
 }
 
 // ── Session save ─────────────────────────────────────────────
@@ -382,6 +416,11 @@ window.DB = {
   toggleBookmark,
   getBookmarkedItems,
   selectBookmarkQuestions,
+  isExcluded,
+  setExcluded,
+  toggleExclude,
+  getExcludedItems,
+  getExcludedIds,
   BADGE_DEFS,
   xpForLevel,
   levelFromXP,
