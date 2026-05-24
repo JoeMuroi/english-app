@@ -31,6 +31,69 @@ if (synth) {
   document.addEventListener('click',      _unlock);
 }
 
+// ── Session size (10 / 20 / 30 questions) ────────────────────
+const SESSION_SIZES = [10, 20, 30];
+let _sessionSize = (() => {
+  const v = parseInt(localStorage.getItem('sessionSize'), 10);
+  return SESSION_SIZES.includes(v) ? v : 30;
+})();
+function setSessionSize(n) {
+  n = parseInt(n, 10);
+  if (!SESSION_SIZES.includes(n)) return;
+  _sessionSize = n;
+  localStorage.setItem('sessionSize', _sessionSize);
+  document.querySelectorAll('[data-session-size]').forEach(b => {
+    b.classList.toggle('active', parseInt(b.dataset.sessionSize, 10) === _sessionSize);
+  });
+  document.querySelectorAll('.session-size-label').forEach(el => {
+    el.textContent = _sessionSize;
+  });
+}
+function sessionSizeChipsHTML() {
+  return `
+    <div class="size-chips">
+      ${SESSION_SIZES.map(n => `
+        <button type="button" class="size-chip${n === _sessionSize ? ' active' : ''}"
+                data-session-size="${n}">${n}問</button>
+      `).join('')}
+    </div>`;
+}
+function attachSessionSizeChips() {
+  document.querySelectorAll('[data-session-size]').forEach(btn => {
+    btn.addEventListener('click', () => setSessionSize(btn.dataset.sessionSize));
+  });
+}
+
+// ── Playback rate (0.8x – 2.0x) ──────────────────────────────
+const PLAYBACK_RATE_MIN = 0.8;
+const PLAYBACK_RATE_MAX = 2.0;
+const PLAYBACK_RATE_DEFAULT = 1.2;
+let _playbackRate = (() => {
+  const v = parseFloat(localStorage.getItem('playbackRate'));
+  return (v >= PLAYBACK_RATE_MIN && v <= PLAYBACK_RATE_MAX) ? v : PLAYBACK_RATE_DEFAULT;
+})();
+function setPlaybackRate(v) {
+  _playbackRate = Math.max(PLAYBACK_RATE_MIN, Math.min(PLAYBACK_RATE_MAX, +v));
+  localStorage.setItem('playbackRate', _playbackRate);
+  document.querySelectorAll('.speed-slider').forEach(el => { el.value = _playbackRate; });
+  document.querySelectorAll('.speed-value').forEach(el => { el.textContent = _playbackRate.toFixed(1) + 'x'; });
+}
+function speedControlHTML() {
+  return `
+    <div class="speed-control">
+      <span>🔊 速度</span>
+      <input type="range" class="speed-slider"
+             min="${PLAYBACK_RATE_MIN}" max="${PLAYBACK_RATE_MAX}" step="0.1"
+             value="${_playbackRate}">
+      <span class="speed-value">${_playbackRate.toFixed(1)}x</span>
+    </div>`;
+}
+function attachSpeedControls() {
+  document.querySelectorAll('.speed-slider').forEach(slider => {
+    slider.addEventListener('input', e => setPlaybackRate(e.target.value));
+  });
+}
+
 function speak(text) {
   return new Promise(resolve => {
     if (!synth) { resolve(); return; }
@@ -38,7 +101,7 @@ function speak(text) {
       synth.cancel();
       const utt = new SpeechSynthesisUtterance(text);
       utt.lang  = 'en-US';
-      utt.rate  = 1.1;
+      utt.rate  = _playbackRate;
       utt.pitch = 1;
       const usVoice = _voices.find(v => v.lang === 'en-US') ||
                       _voices.find(v => v.lang.startsWith('en'));
@@ -178,13 +241,29 @@ async function renderHome() {
       <div class="bar-bg"><div class="bar-fill" style="width:${pct}%"></div></div>
     </div>
 
-    <button class="btn-primary" id="start-btn">🎧 テストを始める（30問）</button>
+    <div class="card" style="margin-top:8px;margin-bottom:12px">
+      <div class="section-title">📝 出題数</div>
+      ${sessionSizeChipsHTML()}
+      <p style="color:var(--text2);font-size:12px;margin-top:6px">
+        1セッションあたりの問題数を選択してください。
+      </p>
+    </div>
+
+    <button class="btn-primary" id="start-btn">🎧 テストを始める（<span class="session-size-label">${_sessionSize}</span>問）</button>
+
+    <div class="card" style="margin-top:16px">
+      <div class="section-title">🔊 再生速度</div>
+      ${speedControlHTML()}
+      <p style="color:var(--text2);font-size:12px;margin-top:6px">
+        0.8x（ゆっくり）〜 2.0x（速い）で調整できます。設定は保存されます。
+      </p>
+    </div>
 
     <div class="card" style="margin-top:16px">
       <div class="section-title">📈 今日の目標</div>
       <p style="color:var(--text2);font-size:14px">
-        1日1セッション（30問）で習熟度がぐんぐん上がります。<br>
-        苦手な単語は自動的に繰り返し出題されます。
+        1日1セッション（<span class="session-size-label">${_sessionSize}</span>問）で習熟度がぐんぐん上がります。<br>
+        苦手な単語は「⚡ 苦手」タブから集中的に練習できます。
       </p>
     </div>
 
@@ -237,6 +316,9 @@ async function renderHome() {
   const transferMsg = document.getElementById('transfer-msg');
 
   startBtn.addEventListener('click', () => navigateTo('test'));
+
+  attachSpeedControls();
+  attachSessionSizeChips();
 
   // 除外リストのボタン
   const excludedListBtn = document.getElementById('excluded-list-btn');
@@ -303,7 +385,7 @@ let _preloadedQuestions = null; // 先読みした問題リスト
 async function renderTestStart() {
   // スタート画面を表示しながらバックグラウンドで問題を先読み
   _preloadedQuestions = null;
-  DB.selectQuestions(window.ITEMS).then(q => { _preloadedQuestions = q; });
+  DB.selectQuestions(window.ITEMS, _sessionSize).then(q => { _preloadedQuestions = q; });
 
   container.innerHTML = `
     <div style="text-align:center;padding:40px 16px">
@@ -312,8 +394,8 @@ async function renderTestStart() {
       <p style="color:var(--text2);margin-bottom:24px">音声を聞いて正しい選択肢を選んでください</p>
       <div class="card" style="text-align:left;margin-bottom:24px">
         <p style="font-size:14px;color:var(--text2);line-height:1.8">
-          ✅ 1セッション30問<br>
-          ✅ 苦手な項目を優先出題<br>
+          ✅ 1セッション${_sessionSize}問<br>
+          ✅ 苦手な単語は「⚡ 苦手」タブで集中練習<br>
           ✅ 正解するほどXP獲得
         </p>
       </div>
@@ -328,13 +410,23 @@ async function renderTestStart() {
   keyHint.innerHTML = HINT_BASE;
 }
 
-async function startSession() {
+async function startSession(mode = 'normal') {
   cur.clear();
   keyHint.innerHTML = '';
-  // 先読みが完了していればawait不要 → タップの瞬間に音声が鳴る
-  const questions = _preloadedQuestions || await DB.selectQuestions(window.ITEMS);
-  _preloadedQuestions = null;
-  session = { questions, current: 0, score: 0, answers: [] };
+  let questions;
+  if (mode === 'weak') {
+    questions = await DB.selectWeakQuestions(window.ITEMS, _sessionSize);
+    if (!questions.length) {
+      showToast('まだ苦手な単語はありません');
+      navigateTo('weaklist');
+      return;
+    }
+  } else {
+    // 先読みが完了していればawait不要 → タップの瞬間に音声が鳴る
+    questions = _preloadedQuestions || await DB.selectQuestions(window.ITEMS, _sessionSize);
+    _preloadedQuestions = null;
+  }
+  session = { questions, current: 0, score: 0, answers: [], mode };
   renderQuestion();
 }
 
@@ -353,7 +445,7 @@ async function renderQuestion() {
 
   container.innerHTML = `
     <div class="test-progress">
-      <span>${qNum} / ${total}　<span style="color:var(--text2);font-size:11px">（10フレーズ × 3回）</span></span>
+      <span>${qNum} / ${total}${session.mode === 'weak' ? '　<span style="color:var(--warning);font-size:11px">⚡ 苦手モード</span>' : ''}</span>
       <span>${session.score} 正解</span>
     </div>
     <div class="test-progress-bar">
@@ -361,6 +453,7 @@ async function renderQuestion() {
     </div>
 
     <div class="card">
+      ${speedControlHTML()}
       <button class="audio-btn" id="play-btn">
         <span id="play-icon">▶</span>
         <span>もう一度聞く</span>
@@ -392,6 +485,7 @@ async function renderQuestion() {
   }
   startPlay(); // 問題表示と同時に自動再生
   playBtn.addEventListener('click', startPlay);
+  attachSpeedControls();
 
   // Choice buttons
   const choiceBtns = [...document.querySelectorAll('.choice-btn')];
@@ -505,9 +599,11 @@ async function renderResult() {
   cur.clear();
   window.speechSynthesis.cancel();
 
-  // 今回使ったチャンクIDを保存 → 次セッションで除外
-  const usedIds = [...new Set(session.questions.map(q => q.id))];
-  await DB.saveLastSessionChunkIds(usedIds).catch(() => {});
+  // 今回使ったチャンクIDを保存 → 次セッションで除外（通常モードのみ）
+  if (session.mode !== 'weak') {
+    const usedIds = [...new Set(session.questions.map(q => q.id))];
+    await DB.saveLastSessionChunkIds(usedIds).catch(() => {});
+  }
 
   let state, xpGained, newBadges;
   try {
@@ -563,14 +659,15 @@ async function renderResult() {
   // Attach mouse listeners
   const againBtn = document.getElementById('again-btn');
   const homeBtn  = document.getElementById('home-btn');
-  againBtn.addEventListener('click', () => startSession());
+  const lastMode = session.mode;
+  againBtn.addEventListener('click', () => startSession(lastMode));
   homeBtn.addEventListener('click',  () => navigateTo('home'));
 
   newBadges.forEach(b => showToast(`🏅 バッジ獲得: ${b.icon} ${b.name}`));
 
   // Cursor: again(0) ↔ home(1) via ↑↓
   cur.set([
-    { el: againBtn, action: () => startSession(),
+    { el: againBtn, action: () => startSession(lastMode),
       nav: { up:0, down:1, left:0, right:0 } },
     { el: homeBtn,  action: () => navigateTo('home'),
       nav: { up:0, down:1, left:1, right:1 } },
@@ -607,6 +704,15 @@ async function renderWeakList() {
 
   container.innerHTML = `
     <div class="section-title">⚡ 苦手リスト</div>
+    ${weakItems.length ? `
+      <button class="btn-primary" id="weak-test-btn" style="margin-bottom:12px">
+        🎧 苦手の単語でテスト（<span class="session-size-label">${_sessionSize}</span>問）
+      </button>
+      <div class="card" style="margin-bottom:12px;padding:10px 14px">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:6px">出題数</div>
+        ${sessionSizeChipsHTML()}
+      </div>
+    ` : ''}
     <div class="filter-tabs">
       <button class="filter-tab active" data-type="all">すべて</button>
       <button class="filter-tab" data-type="chunk">チャンク</button>
@@ -617,6 +723,10 @@ async function renderWeakList() {
         : renderList('all')}
     </div>
   `;
+
+  const weakTestBtn = document.getElementById('weak-test-btn');
+  if (weakTestBtn) weakTestBtn.addEventListener('click', () => startSession('weak'));
+  attachSessionSizeChips();
 
   document.querySelectorAll('.filter-tab').forEach(tab => {
     tab.addEventListener('click', () => {

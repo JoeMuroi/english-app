@@ -132,27 +132,41 @@ async function saveLastSessionChunkIds(ids) {
   await dbPut('user', { key: 'lastChunks', ids });
 }
 
-// ── SRS: 10 unique chunks × 3 reps = 30 questions ────────────
-async function selectQuestions(allItems) {
-  const UNIQUE = 10;
-  const REPS   = 3;
+// 「苦手」とみなす基準（2回以上出題で正答率70%未満）
+const WEAK_ACCURACY_THRESHOLD = 0.7;
+const WEAK_MIN_ATTEMPTS = 2;
 
+function isWeakRecord(r) {
+  const total = r.correct + r.incorrect;
+  if (total < WEAK_MIN_ATTEMPTS) return false;
+  return (r.correct / total) < WEAK_ACCURACY_THRESHOLD;
+}
+
+async function getWeakIds() {
+  const records = await getAllItemRecords();
+  return new Set(records.filter(r => !r.excluded && isWeakRecord(r)).map(r => r.id));
+}
+
+// ── 通常テスト: 苦手単語は除外。同じ単語は1回のみ ────────────
+async function selectQuestions(allItems, count = 30) {
   const now = Date.now();
   const records = await getAllItemRecords();
   const recMap  = {};
   records.forEach(r => recMap[r.id] = r);
 
-  // Exclude chunks used in the previous session
+  // 除外: 前回セッションで出た / ユーザーが「不要」に設定 / 苦手リスト入り
   const lastIds    = new Set(await getLastSessionChunkIds());
-  // Exclude items the user marked as "不要" (excluded)
   const excludedIds = new Set(records.filter(r => r.excluded).map(r => r.id));
-  const allChunks  = allItems.filter(i => i.type === 'chunk' && !excludedIds.has(i.id));
+  const weakIds    = new Set(records.filter(r => !r.excluded && isWeakRecord(r)).map(r => r.id));
+  const allChunks  = allItems.filter(i =>
+    i.type === 'chunk' && !excludedIds.has(i.id) && !weakIds.has(i.id)
+  );
   const freshChunks = allChunks.filter(i => !lastIds.has(i.id));
 
-  // Fall back to all chunks if not enough fresh ones
-  const pool = freshChunks.length >= UNIQUE ? freshChunks : allChunks;
+  // 新鮮なチャンクが足りなければ全プールにフォールバック
+  const pool = freshChunks.length >= count ? freshChunks : allChunks;
 
-  // SRS scoring: lower score = higher priority
+  // SRSスコアリング（苦手は除外済みなので、未出題/復習期到来を優先）
   const scored = pool.map(item => {
     const rec = recMap[item.id];
     if (!rec || rec.lastSeen === null) return { item, score: Math.random() * 0.5 };
@@ -161,12 +175,34 @@ async function selectQuestions(allItems) {
     return { item, score: accuracy - overdue / 86400000 * 0.1 + Math.random() * 0.2 };
   });
   scored.sort((a, b) => a.score - b.score);
-  const picked = scored.slice(0, UNIQUE).map(s => s.item);
+  const picked = scored.slice(0, count).map(s => s.item);
 
-  // Triple each chunk then shuffle (no consecutive duplicates)
-  const tripled = [];
-  for (let r = 0; r < REPS; r++) tripled.push(...picked);
-  return shuffleNoConsecutive(tripled);
+  // 同じ単語は1回のみ → 単純シャッフル
+  return picked.sort(() => Math.random() - 0.5);
+}
+
+// ── 苦手専用テスト: 苦手リストの単語からのみ出題 ──────────────
+async function selectWeakQuestions(allItems, count = 30) {
+  const records = await getAllItemRecords();
+  const weakRecs = records.filter(r => !r.excluded && isWeakRecord(r));
+  if (!weakRecs.length) return [];
+
+  const itemMap = {};
+  allItems.forEach(i => itemMap[i.id] = i);
+
+  // 正答率が低い順に優先、ランダム性も少し加える
+  const scored = weakRecs
+    .map(r => {
+      const item = itemMap[r.id];
+      if (!item) return null;
+      const accuracy = r.correct / (r.correct + r.incorrect);
+      return { item, score: accuracy + Math.random() * 0.1 };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.score - b.score);
+
+  const picked = scored.slice(0, count).map(s => s.item);
+  return picked.sort(() => Math.random() - 0.5);
 }
 
 // ── Weak items (worst accuracy, seen at least twice) ────────
@@ -177,7 +213,7 @@ async function getWeakItems(limit = 50) {
   allItems.forEach(i => itemMap[i.id] = i);
 
   const withAccuracy = records
-    .filter(r => !r.excluded && (r.correct + r.incorrect) >= 2)
+    .filter(r => !r.excluded && isWeakRecord(r))
     .map(r => ({
       ...r,
       item: itemMap[r.id],
@@ -406,6 +442,8 @@ window.DB = {
   recordAnswer,
   getAllItemRecords,
   selectQuestions,
+  selectWeakQuestions,
+  getWeakIds,
   getWeakItems,
   getMasteryMap,
   getUserState,

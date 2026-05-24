@@ -151,6 +151,53 @@ body {
 }
 .test-progress-bar { margin-bottom: 20px; }
 
+.size-chips {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.size-chip {
+  flex: 1;
+  min-width: 70px;
+  padding: 10px 14px;
+  background: var(--surface);
+  border: 2px solid var(--surface2);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+.size-chip:hover { border-color: var(--accent2); }
+.size-chip.active {
+  border-color: var(--accent);
+  background: #38bdf822;
+  color: var(--accent);
+}
+
+.speed-control {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: var(--text2);
+}
+.speed-control input[type="range"] {
+  flex: 1;
+  accent-color: var(--accent);
+  height: 4px;
+  cursor: pointer;
+}
+.speed-control .speed-value {
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 42px;
+  text-align: right;
+  font-size: 14px;
+}
+
 .audio-btn {
   display: flex;
   align-items: center;
